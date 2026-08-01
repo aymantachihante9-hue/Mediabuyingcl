@@ -1,0 +1,455 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// TEAM & ROLES
+// ─────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+  MEDIA_BUYER
+  DESIGNER
+  COPYWRITER
+  ANALYST
+}
+
+model TeamMember {
+  id           String     @id @default(cuid())
+  supabaseId   String     @unique // maps to Supabase Auth user
+  name         String
+  email        String     @unique
+  role         Role       @default(ADMIN)
+  avatarUrl    String?
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  leads        Lead[]     @relation("AssignedLeads")
+  clients      Client[]   @relation("AssignedClients")
+  tasks        Task[]     @relation("AssignedTasks")
+  activities   Activity[]
+  comments     Comment[]
+}
+
+// ─────────────────────────────────────────────
+// LEADS (public form → admin)
+// ─────────────────────────────────────────────
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  MEETING_BOOKED
+  WON
+  LOST
+  ARCHIVED
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  fullName       String
+  phone          String
+  email          String
+  brandName      String
+  storeUrl       String?
+  monthlyBudget  String
+  dailyAdBudget  String
+  productsCount  String
+  targetCountry  String
+  platform       String
+  currentProblem String
+  notes          String?
+  status         LeadStatus @default(NEW)
+  source         String     @default("direct") // facebook / tiktok / instagram / organic / direct
+  sourcePage     String?
+  isDuplicate    Boolean    @default(false)
+  assignedToId   String?
+  assignedTo     TeamMember? @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  client         Client?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@index([phone])
+}
+
+// ─────────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────────
+
+enum OnboardingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  OVERDUE
+}
+
+model Client {
+  id               String            @id @default(cuid())
+  leadId           String?           @unique
+  lead             Lead?             @relation(fields: [leadId], references: [id])
+  businessName     String
+  contactName      String
+  phone            String
+  email            String
+  storeUrl         String?
+  targetCountry    String?
+  monthlyBudget    String?
+  packageName      String?
+  contractDetails  String?
+  onboardingStatus OnboardingStatus  @default(PENDING)
+  paymentStatus    PaymentStatus     @default(PENDING)
+  pinned           Boolean           @default(false)
+  archived         Boolean           @default(false)
+  performanceScore Int?              // 0–100
+  assignedToId     String?
+  assignedTo       TeamMember?       @relation("AssignedClients", fields: [assignedToId], references: [id])
+  notes            Note[]
+  comments         Comment[]
+  invoices         Invoice[]
+  adAccounts       AdAccount[]
+  campaigns        Campaign[]
+  pixels           Pixel[]
+  activities       Activity[]
+  events           CalendarEvent[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category  String   @default("general") // onboarding / strategy / ad-account / meeting / problem / follow-up
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Comment {
+  id        String     @id @default(cuid())
+  clientId  String
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    TeamMember @relation(fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime   @default(now())
+}
+
+// ─────────────────────────────────────────────
+// WEBSITE CONTENT (CMS)
+// ─────────────────────────────────────────────
+
+// Every visible section of the public site is a row here.
+// `data` holds the section's editable JSON (texts, images, CTAs, colors...).
+model SiteSection {
+  id        String   @id @default(cuid())
+  key       String   @unique // hero, problem, services, process, results, testimonials, pricing, faq, contact, footer
+  label     String
+  visible   Boolean  @default(true)
+  order     Int
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+model ContentVersion {
+  id         String   @id @default(cuid())
+  sectionKey String
+  data       Json
+  savedBy    String?
+  createdAt  DateTime @default(now())
+
+  @@index([sectionKey, createdAt])
+}
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  name      String
+  company   String?
+  quote     String
+  avatarUrl String?
+  audioUrl  String?
+  order     Int      @default(0)
+  visible   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model PricingPackage {
+  id          String   @id @default(cuid())
+  title       String
+  priceMad    Int
+  period      String   @default("شهرياً")
+  products    String   // e.g. "حتى 3 منتجات"
+  features    Json     // string[]
+  ctaText     String   @default("ابدأ الآن")
+  ctaLink     String   @default("#contact")
+  highlighted Boolean  @default(false)
+  badge       String?
+  order       Int      @default(0)
+  visible     Boolean  @default(true)
+}
+
+model Faq {
+  id       String  @id @default(cuid())
+  question String
+  answer   String
+  order    Int     @default(0)
+  visible  Boolean @default(true)
+}
+
+model CaseStudy {
+  id          String  @id @default(cuid())
+  title       String
+  niche       String?
+  before      String
+  after       String
+  metricLabel String  // e.g. "ROAS", "طلبيات/يوم", "CPA"
+  imageUrl    String?
+  order       Int     @default(0)
+  visible     Boolean @default(true)
+}
+
+model ServiceCard {
+  id          String  @id @default(cuid())
+  icon        String  // lucide icon name
+  title       String
+  description String
+  metric      String?
+  order       Int     @default(0)
+  visible     Boolean @default(true)
+}
+
+// ─────────────────────────────────────────────
+// MEDIA LIBRARY
+// ─────────────────────────────────────────────
+
+model MediaAsset {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  type      String   // image / video / logo / pdf / contract / creative / screenshot / icon / audio
+  category  String   @default("general")
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────
+// PIXELS & TRACKING
+// ─────────────────────────────────────────────
+
+enum PixelPlatform {
+  FACEBOOK
+  TIKTOK
+  GTM
+  GA4
+  META_CAPI
+  SNAPCHAT
+  LINKEDIN
+}
+
+model Pixel {
+  id            String        @id @default(cuid())
+  platform      PixelPlatform
+  pixelId       String
+  label         String?
+  connected     Boolean       @default(true)
+  lastEventAt   DateTime?
+  eventsTotal   Int           @default(0)
+  purchases     Int           @default(0)
+  addToCarts    Int           @default(0)
+  checkouts     Int           @default(0)
+  viewContents  Int           @default(0)
+  leadsCount    Int           @default(0)
+  pageViews     Int           @default(0)
+  errorState    String?
+  eventMapping  Json?
+  clientId      String?
+  client        Client?       @relation(fields: [clientId], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// AD ACCOUNTS & CAMPAIGNS
+// ─────────────────────────────────────────────
+
+enum AdPlatform {
+  FACEBOOK
+  TIKTOK
+  GOOGLE
+}
+
+model AdAccount {
+  id          String     @id @default(cuid())
+  platform    AdPlatform
+  accountName String
+  accountId   String
+  budget      Float?
+  spend       Float      @default(0)
+  ctr         Float?
+  cpa         Float?
+  roas        Float?
+  status      String     @default("active")
+  lastSyncAt  DateTime?
+  notes       String?
+  clientId    String?
+  client      Client?    @relation(fields: [clientId], references: [id])
+  campaigns   Campaign[]
+  createdAt   DateTime   @default(now())
+}
+
+model Campaign {
+  id          String     @id @default(cuid())
+  name        String
+  platform    AdPlatform
+  objective   String
+  budget      Float
+  status      String     @default("active") // active / paused / ended / learning
+  spend       Float      @default(0)
+  results     Int        @default(0)
+  cpa         Float?
+  roas        Float?
+  ctr         Float?
+  conversions Int        @default(0)
+  impressions Int        @default(0)
+  clicks      Int        @default(0)
+  adAccountId String?
+  adAccount   AdAccount? @relation(fields: [adAccountId], references: [id])
+  clientId    String?
+  client      Client?    @relation(fields: [clientId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, platform])
+}
+
+// Daily metric snapshots → powers charts & reports
+model DailyMetric {
+  id      String   @id @default(cuid())
+  date    DateTime @db.Date
+  leads   Int      @default(0)
+  orders  Int      @default(0)
+  revenue Float    @default(0)
+  spend   Float    @default(0)
+  roas    Float?
+  cpa     Float?
+  ctr     Float?
+
+  @@unique([date])
+}
+
+// ─────────────────────────────────────────────
+// TASKS / KANBAN
+// ─────────────────────────────────────────────
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  DONE
+}
+
+model Task {
+  id           String      @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus  @default(TODO)
+  priority     String      @default("normal") // low / normal / high / urgent
+  dueDate      DateTime?
+  order        Int         @default(0)
+  assignedToId String?
+  assignedTo   TeamMember? @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// CALENDAR
+// ─────────────────────────────────────────────
+
+model CalendarEvent {
+  id        String   @id @default(cuid())
+  title     String
+  type      String   @default("meeting") // call / meeting / deadline / review / publishing
+  startsAt  DateTime
+  endsAt    DateTime?
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────
+// FINANCE
+// ─────────────────────────────────────────────
+
+enum InvoiceStatus {
+  PAID
+  PENDING
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id        String        @id @default(cuid())
+  number    String        @unique
+  clientId  String
+  client    Client        @relation(fields: [clientId], references: [id])
+  amountMad Float
+  status    InvoiceStatus @default(PENDING)
+  dueDate   DateTime
+  paidAt    DateTime?
+  recurring Boolean       @default(false)
+  notes     String?
+  createdAt DateTime      @default(now())
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS & ACTIVITY
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // new_lead / pixel_disconnected / campaign_alert / budget_alert / meeting_reminder / invoice_due / contract_signed
+  title     String
+  body      String?
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([read, createdAt])
+}
+
+model Activity {
+  id        String      @id @default(cuid())
+  type      String      // lead_submitted / call_done / meeting_booked / pixel_connected / campaign_launched / budget_increased / report_sent / client_converted / invoice_paid / contract_signed / content_updated
+  message   String
+  clientId  String?
+  client    Client?     @relation(fields: [clientId], references: [id])
+  actorId   String?
+  actor     TeamMember? @relation(fields: [actorId], references: [id])
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// SETTINGS (key-value, editable from admin)
+// ─────────────────────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
