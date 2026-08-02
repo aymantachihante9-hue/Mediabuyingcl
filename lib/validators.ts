@@ -15,8 +15,9 @@ export const leadSchema = z.object({
   platform: z.string().min(1, "اختر المنصة"),
   currentProblem: z.string().min(5, "صف المشكل الحالي باختصار"),
   notes: z.string().optional(),
-  // honeypot anti-spam — must stay empty
-  company: z.string().max(0).optional(),
+  // honeypot anti-spam — bots fill it; humans leave it empty/undefined.
+  // Accept undefined or empty string; anything non-empty is rejected server-side.
+  company: z.string().optional().refine((v) => !v, { message: "" }),
 });
 
 export type LeadInput = z.infer<typeof leadSchema>;
