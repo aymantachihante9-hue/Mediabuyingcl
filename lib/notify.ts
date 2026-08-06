@@ -19,10 +19,10 @@ export async function notifyAdmin(input: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "Earn Partner <notifications@earnpartner.ma>",
+          from: process.env.EMAIL_FROM || "Earn Partner <onboarding@resend.dev>",
           to: process.env.ADMIN_NOTIFY_EMAIL,
           subject: input.title,
-          text: input.body ?? input.title,
+          text: `${input.body ?? input.title}${input.link ? `\n\nافتح: ${process.env.NEXT_PUBLIC_SITE_URL ?? ""}${input.link}` : ""}`,
         }),
       });
     } catch (e) {
